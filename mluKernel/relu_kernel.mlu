@@ -1,0 +1,47 @@
+#include <bang.h>
+
+
+#define DATA_NUM 1024
+
+__mlu_entry__ void relu_kernel(float* dst, float* source, int len) {
+  __nram__ float nram_dst_h[DATA_NUM];
+  __nram__ float nram_src_h[DATA_NUM];
+  __memcpy(nram_src_h, source, len * sizeof(float), GDRAM2NRAM);
+  __bang_relu(nram_dst_h, nram_src_h, len);
+  __memcpy(dst, nram_dst_h, len * sizeof(float), NRAM2GDRAM);
+}
+
+void relu_mlu(float* dst, float* source, int len) {
+  cnrtQueue_t queue;
+  CNRT_CHECK(cnrtSetDevice(0));
+  CNRT_CHECK(cnrtQueueCreate(&queue));
+
+  cnrtDim3_t dim = {1,1,1};
+  cnrtFunctionType_t ktype = CNRT_FUNC_TYPE_BLOCK;
+
+  float* mlu_dst;
+  float* mlu_src;
+
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_dst, len * sizeof(float)));
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_src, len * sizeof(float)));
+
+  CNRT_CHECK(cnrtMemcpy(mlu_src, source, len * sizeof(float), cnrtMemcpyHostToDev));
+
+  void *args[] = {&mlu_dst, &mlu_src,&len};
+  
+  cnrtInvokeKernel((void*)&relu_kernel,dim,ktype, args, 0, queue);
+  //relu_kernel<<<dim, ktype, queue>>>(mlu_dst, mlu_src, len);
+
+  cnrtQueueSync(queue);
+  CNRT_CHECK(cnrtMemcpy(dst, mlu_dst, len * sizeof(float), cnrtMemcpyDevToHost));
+
+  CNRT_CHECK(cnrtQueueDestroy(queue));
+
+  cnrtFree(mlu_dst);
+  cnrtFree(mlu_src);
+
+  return;
+}
+
+
+

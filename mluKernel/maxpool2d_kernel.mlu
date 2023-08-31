@@ -1,0 +1,49 @@
+#include <bang.h>
+
+#define DATA_NUM 1024
+
+__mlu_entry__ void maxpool2d_kernel(float* dst, float* src, int channel,
+                                    int height , int width, 
+                                    int kernel_height, int kernel_width,
+                                    int stride_width, int stride_height) {
+  __bang_printf("%s", "maxpool2d_kernel calculating\n"); 
+  int len = channel * height * width;                                  
+  __nram__ float nram_dst_h[DATA_NUM];
+  __nram__ float nram_src_h[DATA_NUM];
+  __memcpy(nram_src_h, src, len * sizeof(float), GDRAM2NRAM);
+  __bang_maxpool(nram_dst_h, nram_src_h, channel, height, width, kernel_height, kernel_width,stride_width,stride_height);
+  __memcpy(dst, nram_dst_h, len * sizeof(float), NRAM2GDRAM);
+}
+
+void maxpool2d_mlu(float* dst, float* src, int channel,
+                    int height, int width,
+                    int kernel_height, int kernel_width,
+                    int stride_width, int stride_height) {
+    cnrtQueue_t queue;
+    CNRT_CHECK(cnrtSetDevice(0));
+    CNRT_CHECK(cnrtQueueCreate(&queue));
+
+    cnrtDim3_t dim = {1,1,1};
+    cnrtFunctionType_t ktype = CNRT_FUNC_TYPE_BLOCK;
+    
+    int len = channel * height * width;
+    float* mlu_dst;
+    float* mlu_src;
+
+    CNRT_CHECK(cnrtMalloc((void**)&mlu_dst, len * sizeof(float)));
+    CNRT_CHECK(cnrtMalloc((void**)&mlu_src, len * sizeof(float)));
+    
+    CNRT_CHECK(cnrtMemcpy(mlu_src, src, len * sizeof(float), cnrtMemcpyHostToDev));
+
+    maxpool2d_kernel<<<dim, ktype, queue>>>(mlu_dst, mlu_src, channel, height, width, kernel_height, kernel_width, stride_width, stride_height);
+
+    cnrtQueueSync(queue);
+    CNRT_CHECK(cnrtMemcpy(dst, mlu_dst, len * sizeof(float), cnrtMemcpyDevToHost));
+
+    CNRT_CHECK(cnrtQueueDestroy(queue));
+
+    cnrtFree(mlu_dst);
+    cnrtFree(mlu_src);
+
+    return;
+}
