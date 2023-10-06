@@ -27,10 +27,19 @@ avgpool2d:
 	g++  $(OUTPUT_PATH)/$@_kernel.o $(OUTPUT_PATH)/$@.o -o $(OUTPUT_PATH)/$@_test $(CXX_LINK_FLAG)
 	rm $(OUTPUT_PATH)/*.o
 	$(OUTPUT_PATH)/$@_test
-
 relu_lib:
 	cncc $(KERNEL_PATH)/relu_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
-	g++ -shared -o $(OUTPUT_SHARE_LIBRARY_PATH)/librelu.so $(OUTPUT_PATH)/$@_kernel.o
+	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/relu $(OUTPUT_PATH)/$@_kernel.o
+	rm $(OUTPUT_PATH)/*.o
+
+maxpool2d_lib:
+	cncc $(KERNEL_PATH)/maxpool2d_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
+	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/maxpool2d $(OUTPUT_PATH)/$@_kernel.o
+	rm $(OUTPUT_PATH)/*.o
+
+avgpool2d_lib:
+	cncc $(KERNEL_PATH)/avgpool2d_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
+	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/avgpool2d $(OUTPUT_PATH)/$@_kernel.o
 	rm $(OUTPUT_PATH)/*.o
 clean:
 	rm $(OUTPUT_PATH)/*_test
