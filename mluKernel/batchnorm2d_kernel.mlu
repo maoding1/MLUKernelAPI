@@ -1,0 +1,76 @@
+#include <bang.h>
+
+#define DATA_NUM 1024
+
+__mlu_entry__ void batch_norm2d_kernel(float* dst, float* source, float *moving_mean, float *moving_var, unsigned int len, float weight, float bias, float eps) {
+  __nram__ float nram_dst_h[DATA_NUM];
+  __nram__ float nram_src_h[DATA_NUM];
+  __nram__ float nram_var_h[DATA_NUM];
+  __nram__ float nram_mean_h[DATA_NUM];
+  __nram__ float nram_tmp_h[DATA_NUM];
+  __nram__ float nram_weight_h[DATA_NUM];
+  __nram__ float nram_bias_h[DATA_NUM];
+  __nram__ float nram_addition_h[DATA_NUM];
+
+  __memcpy(nram_src_h, source, len * sizeof(float), GDRAM2NRAM);
+  __memcpy(nram_var_h, moving_var, len * sizeof(float), GDRAM2NRAM);
+  __memcpy(nram_mean_h, moving_mean, len * sizeof(float), GDRAM2NRAM);
+  __nramset_float(nram_weight_h, len, weight);
+  __nramset_float(nram_bias_h, len, bias);
+  __nramset_float(nram_addition_h, len, 0);
+
+  __nramset_float(nram_tmp_h, len, eps);
+  __bang_add(nram_var_h, nram_var_h, nram_tmp_h, len);
+  __bang_active_sqrt(nram_var_h, nram_var_h, len);
+  __bang_sub(nram_src_h, nram_src_h, nram_mean_h, len);
+  __bang_div(nram_tmp_h, nram_src_h, nram_var_h, nram_addition_h, len);
+  __bang_mul(nram_dst_h, nram_tmp_h, nram_weight_h, len);
+  __bang_add(nram_dst_h, nram_dst_h, nram_bias_h, len);
+  
+  __memcpy(dst, nram_dst_h, len * sizeof(float), NRAM2GDRAM);
+}
+
+void batch_norm2d_mlu(float* dst, float* source, float *moving_mean, float *moving_var, unsigned int len, float weight, float bias, float eps = 1e-05) {
+  cnrtQueue_t queue;
+  CNRT_CHECK(cnrtSetDevice(0));
+  CNRT_CHECK(cnrtQueueCreate(&queue));
+
+  cnrtDim3_t dim = {1,1,1};
+  cnrtFunctionType_t ktype = CNRT_FUNC_TYPE_BLOCK;
+
+  cnrtNotifier_t start, end;
+  CNRT_CHECK(cnrtNotifierCreate(&start));
+  CNRT_CHECK(cnrtNotifierCreate(&end));
+
+  float* mlu_dst;
+  float* mlu_src;
+  float* mlu_moving_mean, *mlu_moving_var;
+
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_dst, len * sizeof(float)));
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_src, len * sizeof(float)));
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_moving_mean, len * sizeof(float)));
+  CNRT_CHECK(cnrtMalloc((void**)&mlu_moving_var, len * sizeof(float)));
+
+  CNRT_CHECK(cnrtMemcpy(mlu_src, source, len * sizeof(float), cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpy(mlu_moving_mean, moving_mean, len * sizeof(float), cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpy(mlu_moving_var, moving_var, len * sizeof(float), cnrtMemcpyHostToDev));
+
+  CNRT_CHECK(cnrtPlaceNotifier(start, queue));
+  batch_norm2d_kernel<<<dim, ktype, queue>>>(mlu_dst, mlu_src, mlu_moving_mean, mlu_moving_var, len, weight, bias, eps);
+  CNRT_CHECK(cnrtPlaceNotifier(end, queue));
+
+  cnrtQueueSync(queue);
+  CNRT_CHECK(cnrtMemcpy(dst, mlu_dst, len * sizeof(float), cnrtMemcpyDevToHost));
+
+  CNRT_CHECK(cnrtQueueDestroy(queue));
+
+  cnrtFree(mlu_dst);
+  cnrtFree(mlu_src);
+  cnrtFree(mlu_moving_mean);
+  cnrtFree(mlu_moving_var);
+
+  return;
+}
+
+
+
