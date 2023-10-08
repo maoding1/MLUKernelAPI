@@ -1,47 +1,68 @@
 #include <bang.h>
-
-#define DATA_NUM 1024
+#include <stdio.h>
+#define DATA_NUM 4096
 
 __mlu_entry__ void avgpool2d_kernel(float* dst, float* src, int channel,
                                     int height , int width, 
                                     int kernel_height, int kernel_width,
-                                    int stride_width, int stride_height) {
+                                    int stride_width, int stride_height,
+                                    int out_h, int out_w) {
   __bang_printf("%s", "avgpool2d_kernel calculating\n");                                  
-  int len = channel * height * width;                                  
-  __nram__ float nram_dst_h[DATA_NUM];
-  __nram__ float nram_src_h[DATA_NUM];
-  __memcpy(nram_src_h, src, len * sizeof(float), GDRAM2NRAM);
-  __bang_avgpool(nram_dst_h, nram_src_h, channel, height, width, kernel_height, kernel_width,stride_width,stride_height);
- // __bang_mul_scalar(nram_dst_h, nram_dst_h, 1.0/kernel_height*kernel_width, DATA_NUM);
-  __memcpy(dst, nram_dst_h, len * sizeof(float), NRAM2GDRAM);
+  int len = channel * height * width;
+  int out_len = channel * out_h * out_w;
+  // __bang_printf("len and out_len: %d , %d\n", len, out_len);                                  
+  __nram__ float nram_dst_chw[DATA_NUM];
+  __nram__ float nram_src_chw[DATA_NUM];
+  __nram__ float nram_dst_hwc[DATA_NUM];
+  __nram__ float nram_src_hwc[DATA_NUM];
+  // __bang_printf("mem alloc finished\n");
+  __memcpy(nram_src_chw, src, len * sizeof(float), GDRAM2NRAM);
+  __bang_reshape_nchw2nhwc(nram_src_hwc,nram_src_chw,1,height,width,channel);
+  __bang_avgpool(nram_dst_hwc, nram_src_hwc, channel, height, width, kernel_height, kernel_width,stride_width,stride_height);
+  // __bang_mul_scalar(nram_dst_h, nram_dst_h, 1.0/kernel_height*kernel_width, DATA_NUM);
+  __bang_reshape_nhwc2nchw(nram_dst_chw, nram_dst_hwc, 1, out_h, out_w, channel);                                    
+  __memcpy(dst, nram_dst_chw, out_len * sizeof(float), NRAM2GDRAM);
 }
 
-void avgpool2d_mlu(float* dst, float* src, int channel,
+void avgpool2d_mlu(float* dst, float* src, const int number,int channel,
                     int height, int width,
                     int kernel_height, int kernel_width,
                     int stride_width, int stride_height) {
-    cnrtQueue_t queue;
+    cnrtQueue_t queue[number];
     CNRT_CHECK(cnrtSetDevice(0));
-    CNRT_CHECK(cnrtQueueCreate(&queue));
+
+    for (int i=0; i < number; i++) {
+      CNRT_CHECK(cnrtQueueCreate(&queue[i]));
+    }
+    
 
     cnrtDim3_t dim = {1,1,1};
     cnrtFunctionType_t ktype = CNRT_FUNC_TYPE_BLOCK;
     
     int len = channel * height * width;
+
     float* mlu_dst;
     float* mlu_src;
 
-    CNRT_CHECK(cnrtMalloc((void**)&mlu_dst, len * sizeof(float)));
-    CNRT_CHECK(cnrtMalloc((void**)&mlu_src, len * sizeof(float)));
+    int output_h = (height - kernel_height) / stride_height + 1;
+    int output_w = (width  - kernel_width) / stride_width + 1;
+    int out_len = output_h * output_w * channel;
+    CNRT_CHECK(cnrtMalloc((void**)&mlu_dst, number * out_len * sizeof(float)));
+    CNRT_CHECK(cnrtMalloc((void**)&mlu_src, number * len * sizeof(float)));
     
-    CNRT_CHECK(cnrtMemcpy(mlu_src, src, len * sizeof(float), cnrtMemcpyHostToDev));
-
-    avgpool2d_kernel<<<dim, ktype, queue>>>(mlu_dst, mlu_src, channel, height, width, kernel_height, kernel_width, stride_width, stride_height);
-
-    cnrtQueueSync(queue);
-    CNRT_CHECK(cnrtMemcpy(dst, mlu_dst, len * sizeof(float), cnrtMemcpyDevToHost));
-
-    CNRT_CHECK(cnrtQueueDestroy(queue));
+    
+    for (int i=0; i < number; i++) {
+      CNRT_CHECK(cnrtMemcpyAsync(mlu_src+i*len, src+i*len,  len * sizeof(float), queue[i],cnrtMemcpyHostToDev));
+      avgpool2d_kernel<<<dim, ktype, queue[i]>>>(mlu_dst+i*out_len, mlu_src+i*len, channel, height, width, kernel_height, kernel_width, stride_width, stride_height,output_h, output_w);
+      CNRT_CHECK(cnrtMemcpyAsync(dst+i*out_len, mlu_dst+i*out_len, out_len * sizeof(float),queue[i], cnrtMemcpyDevToHost));
+    }
+    cnrtSyncDevice();
+    
+    for (int i=0; i < number; i++) {
+      //cnrtQueueSync(queue[i]);
+      CNRT_CHECK(cnrtQueueDestroy(queue[i]));
+    }
+    
 
     cnrtFree(mlu_dst);
     cnrtFree(mlu_src);
