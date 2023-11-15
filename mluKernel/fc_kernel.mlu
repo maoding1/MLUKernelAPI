@@ -1,0 +1,18 @@
+#include <bang.h>
+
+#define DATA_NUM 1024
+#define COL_NUM 1
+
+__mlu_entry__ void fc_kernel(float* dst, float* src1, float* src2, int m, int k) {
+    int len = k * m;
+    __nram__ float source1[DATA_NUM];
+    __nram__ float source2[DATA_NUM];
+    __nram__ float dest[DATA_NUM];
+
+    __memcpy(source1, src1, len * sizeof(float), GDRAM2NRAM);
+    __memcpy(source2, src2, k * sizeof(float), GDRAM2NRAM);
+    __void __bang_matmul(dest, source1, source2, m, k, COL_NUM);
+    __memcpy(dst, dest, m * sizeof(float), NRAM2GDRAM);
+
+    return;
+}

@@ -7,6 +7,7 @@ __mlu_entry__ void relu_kernel(float* dst, float* source, int len) {
   __nram__ float nram_dst_h[DATA_NUM];
   __nram__ float nram_src_h[DATA_NUM];
   __memcpy(nram_src_h, source, len * sizeof(float), GDRAM2NRAM);
+  __bang_printf("mlu_relu_kernel calculating!\n");
   __bang_relu(nram_dst_h, nram_src_h, len);
   __memcpy(dst, nram_dst_h, len * sizeof(float), NRAM2GDRAM);
 }
