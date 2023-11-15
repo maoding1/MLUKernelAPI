@@ -1,0 +1,55 @@
+#include <bang.h>
+
+#define EPS 1e-7
+#define MAX_KERNEL 4096
+#define MAX_LEN 4096
+// __BANG_ARCH__ = 372
+
+__mlu_entry__ void Kernel(float *dst, const float *src, const float *kernel, unsigned int channel_input, unsigned int height, unsigned int width, unsigned int kernel_height, unsigned int kernel_width, unsigned int stride_width, unsigned int stride_height, unsigned int channel_output) {
+  __nram__ float nram_dst_h[MAX_LEN];
+  __nram__ float nram_src_h[MAX_LEN];
+  __wram__ float wram_kernel_h[MAX_KERNEL];
+  __memcpy(nram_src_h, src, channel_input * height * width * sizeof(float), GDRAM2NRAM);
+  __memcpy(wram_kernel_h, kernel, channel_input * channel_output * kernel_height * kernel_width * sizeof(float), GDRAM2WRAM);
+
+  unsigned int output_height = (height - kernel_height) / stride_height + 1;
+  unsigned int output_width = (width - kernel_width) / stride_width + 1;
+  __bang_conv(nram_dst_h, nram_src_h, wram_kernel_h, channel_input, height, width, kernel_height, kernel_width, stride_width, stride_height, channel_output);
+  __memcpy(dst, nram_dst_h, channel_output * output_height * output_width * sizeof(float), NRAM2GDRAM);
+}
+
+void mlu_conv(float *dst, float *src, float *kernel, unsigned int channel_input, unsigned int height, unsigned int width, unsigned int kernel_height, unsigned int kernel_width, unsigned int stride_width, unsigned int stride_height, unsigned int channel_output)
+{
+    cnrtQueue_t queue;
+
+    CNRT_CHECK(cnrtSetDevice(0));
+    CNRT_CHECK(cnrtQueueCreate(&queue));
+
+    cnrtDim3_t dim = {1, 1, 1};
+    cnrtFunctionType_t ktype = CNRT_FUNC_TYPE_BLOCK;
+
+    cnrtNotifier_t start, end;
+    CNRT_CHECK(cnrtNotifierCreate(&start));
+    CNRT_CHECK(cnrtNotifierCreate(&end));
+
+    float *mlu_src, *mlu_ker;
+    float *mlu_dst;
+    unsigned int output_height = (height - kernel_height) / stride_height + 1;
+    unsigned int output_width = (width - kernel_width) / stride_width + 1;
+    CNRT_CHECK(cnrtMalloc((void **)&mlu_dst, channel_output * output_height * output_width * sizeof(float)));
+    CNRT_CHECK(cnrtMalloc((void **)&mlu_src, channel_input * height * width * sizeof(float)));
+    CNRT_CHECK(cnrtMalloc((void **)&mlu_ker, channel_input * channel_output * kernel_height * kernel_width * sizeof(float)));
+    CNRT_CHECK(cnrtMemcpy(mlu_src, src, channel_input * height * width * sizeof(float), cnrtMemcpyHostToDev));
+    CNRT_CHECK(cnrtMemcpy(mlu_ker, kernel, channel_input * channel_output * kernel_height * kernel_width * sizeof(float), cnrtMemcpyHostToDev));
+
+    CNRT_CHECK(cnrtPlaceNotifier(start, queue));
+    Kernel<<<dim, ktype, queue>>>(mlu_dst, mlu_src, mlu_ker, channel_input, height, width, kernel_height, kernel_width, stride_width, stride_height, channel_output);
+    CNRT_CHECK(cnrtPlaceNotifier(end, queue));
+
+    cnrtQueueSync(queue);
+    CNRT_CHECK(cnrtMemcpy(dst, mlu_dst, channel_output * output_height * output_width * sizeof(float), cnrtMemcpyDevToHost));
+    CNRT_CHECK(cnrtQueueDestroy(queue));
+    cnrtFree(mlu_dst);
+    cnrtFree(mlu_src);
+    cnrtFree(mlu_ker);
+}
