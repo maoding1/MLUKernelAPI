@@ -27,6 +27,21 @@ avgpool2d:
 	g++  $(OUTPUT_PATH)/$@_kernel.o $(OUTPUT_PATH)/$@.o -o $(OUTPUT_PATH)/$@_test $(CXX_LINK_FLAG)
 	rm $(OUTPUT_PATH)/*.o
 	$(OUTPUT_PATH)/$@_test
+
+# batchnorm2d:
+# 	cncc $(KERNEL_PATH)/$@_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_FLAG}
+# 	g++  $(TESTFILE_PATH)/$@_test.cpp $(CXX_TEST_FLAG) -o $(OUTPUT_PATH)/$@.o
+# 	g++  $(OUTPUT_PATH)/$@_kernel.o $(OUTPUT_PATH)/$@.o -o $(OUTPUT_PATH)/$@_test $(CXX_LINK_FLAG)
+# 	rm $(OUTPUT_PATH)/*.o
+# 	$(OUTPUT_PATH)/$@_test
+
+conv2d:
+	cncc $(KERNEL_PATH)/$@_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_FLAG}
+	g++  $(TESTFILE_PATH)/$@_test.cpp $(CXX_TEST_FLAG) -o $(OUTPUT_PATH)/$@.o
+	g++  $(OUTPUT_PATH)/$@_kernel.o $(OUTPUT_PATH)/$@.o -o $(OUTPUT_PATH)/$@_test $(CXX_LINK_FLAG)
+	rm $(OUTPUT_PATH)/*.o
+	$(OUTPUT_PATH)/$@_test
+
 relu_lib:
 	cncc $(KERNEL_PATH)/relu_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
 	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/librelu.a $(OUTPUT_PATH)/$@_kernel.o
@@ -37,19 +52,15 @@ maxpool2d_lib:
 	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/libmaxpool2d.a $(OUTPUT_PATH)/$@_kernel.o
 	rm $(OUTPUT_PATH)/*.o
 
-<<<<<<< HEAD
-batchnorm2d:
-	cncc $(KERNEL_PATH)/$@_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_FLAG}
-	g++  $(TESTFILE_PATH)/$@_test.cpp $(CXX_TEST_FLAG) -o $(OUTPUT_PATH)/$@.o
-	g++  $(OUTPUT_PATH)/$@_kernel.o $(OUTPUT_PATH)/$@.o -o $(OUTPUT_PATH)/$@_test $(CXX_LINK_FLAG)
-	rm $(OUTPUT_PATH)/*.o
-	$(OUTPUT_PATH)/$@_test
-
-=======
 avgpool2d_lib:
 	cncc $(KERNEL_PATH)/avgpool2d_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
 	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/libavgpool2d.a $(OUTPUT_PATH)/$@_kernel.o
 	rm $(OUTPUT_PATH)/*.o
->>>>>>> 84f725990548f4dbd24243e0331f1790fc226195
+
+conv2d_lib:
+	cncc $(KERNEL_PATH)/avgpool2d_kernel.mlu -o $(OUTPUT_PATH)/$@_kernel.o ${CNCC_LINK_FLAG}
+	ar r $(OUTPUT_SHARE_LIBRARY_PATH)/libavgpool2d.a $(OUTPUT_PATH)/$@_kernel.o
+	rm $(OUTPUT_PATH)/*.o
+	
 clean:
 	rm $(OUTPUT_PATH)/*_test
