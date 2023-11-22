@@ -21,13 +21,28 @@ __mlu_entry__ void conv2d_kernel(float *dst, const float *src, const float *kern
   __wram__ float wram_kernel_h[MAX_KERNEL];
   __memcpy(nram_src_h, src, channel_input * height * width * sizeof(float), GDRAM2NRAM);
   __memcpy(wram_kernel_h, kernel, channel_input * channel_output * kernel_height * kernel_width * sizeof(float), GDRAM2WRAM);
+  unsigned int min_channel = 16;
+  __memset(nra)
 
   __bang_pad(nram_padding_h, nram_src_h, channel, height, width, padding_h, padding_h, padding_w, padding_w);
 
   unsigned int padded_height = height + 2 * padding_h, padded_width = width + 2 * padding_w;
-  unsigned int output_height = (padded_height - kernel_height) / stride_height + 1;
-  unsigned int output_width = (padded_width - kernel_width) / stride_width + 1
-  __bang_conv(nram_dst_h, nram_padding_h, wram_kernel_h, channel_input, padded_height, padded_width, kernel_height, kernel_width, stride_width, stride_height, channel_output);
+  if (channel_input < min_channel)
+  {
+    unsigned int padded_size = channel_input * padded_height * padded_width;
+    unsigned int min_size = min_channel * padded_height * padded_width;
+    __memset(nram_padding_h + padded_size, 0, (min_channel - channel_input) * padded_height * padded_width);
+
+    unsigned int output_height = (padded_height - kernel_height) / stride_height + 1;
+    unsigned int output_width = (padded_width - kernel_width) / stride_width + 1
+    __bang_conv(nram_dst_h, nram_padding_h, wram_kernel_h, min_channel, padded_height, padded_width, kernel_height, kernel_width, stride_width, stride_height, channel_output);
+  }
+  else 
+  {
+    unsigned int output_height = (padded_height - kernel_height) / stride_height + 1;
+    unsigned int output_width = (padded_width - kernel_width) / stride_width + 1
+    __bang_conv(nram_dst_h, nram_padding_h, wram_kernel_h, channel_input, padded_height, padded_width, kernel_height, kernel_width, stride_width, stride_height, channel_output);
+  }
   __memcpy(dst, nram_dst_h, channel_output * output_height * output_width * sizeof(float), NRAM2GDRAM);
 }
 
